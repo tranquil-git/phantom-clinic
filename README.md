@@ -68,47 +68,58 @@ So do man hinh va wireframe: `.claude/docs/man-hinh-tong-quan.drawio`
 
 Thu muc `web/` la web app san pham cu, doc bang `products` da xoa trong database `tranquil`.
 
-## Production: database tren Neon + cau hinh API
+## Production (Vercel + Neon)
 
-Database online dung [Neon](https://neon.tech) goi Free: khong can the, region Singapore,
-tu ngu khi khong ai dung va thuc lai sau vai giay o request dau tien.
+| Thanh phan | Dia chi | Project Vercel |
+|---|---|---|
+| Website (Next.js, `frontend/`) | https://vndental-ten.vercel.app | `vndental` |
+| API (Express, `backend/`) | https://phantomdental.vercel.app/api | `phantomdental` |
+| Database | Neon Free `phantom-clinic-db`, PostgreSQL 18, Singapore, database `TranquilClinicDB` | gan vao `phantomdental` |
 
-1. Tren https://console.neon.tech tao project `phantom-clinic`, Postgres 17 hoac 18,
-   region `AWS Asia Pacific 1 (Singapore)`.
-2. Branch `main` → *Roles & Databases*: them role `TranAdmin`, them database
-   `TranquilClinicDB` voi owner `TranAdmin`.
-3. *Connect* → database `TranquilClinicDB`, role `TranAdmin`, tat *Connection pooling*,
-   chep chuoi ket noi vao `DATABASE_URL` trong `backend/.env.production`
-   (mau: `backend/.env.production.example`; file that bi Git bo qua).
-4. Nap bang + du lieu mau:
+`vndental.vercel.app` va `bevndental.vercel.app` da thuoc tai khoan Vercel khac nen khong dung duoc.
+Trinh duyet chi goi `/api/*` tren website; Next.js chuyen tiep sang API (`frontend/.env.production`:
+`API_URL=https://phantomdental.vercel.app`, ghi vao ban build), nen cookie dang nhap la cookie
+cung domain voi website. Lan dau sau mot luc khong ai dung, Neon va function Vercel phai thuc day
+nen request dau mat khoang 15 giay; cac request sau duoi 2 giay.
 
-   ```powershell
-   cd backend; npm run db:deploy          # them "-- --schema-only" neu khong muon du lieu mau
-   ```
+### Trien khai lai
 
-   Database da co du lieu thi script chi in so dong, khong ghi de.
+```powershell
+cd backend;  npx vercel deploy --prod     # API: api/index.js xuat app Express, vercel.json chuyen moi duong dan vao do
+cd frontend; npx vercel deploy --prod     # Website
+```
 
-Bien moi truong cua API production (dat trong `backend/.env.production` hoac muc Environment cua host):
+Thu muc `.vercel/` (lien ket voi project) va `.env.local` do Vercel CLI tao, khong commit.
+`backend/.vercelignore` khong tai `.env*` va `scripts/` len Vercel.
+
+### Bien moi truong API (project `phantomdental`, moi truong Production)
 
 | Bien | Ghi chu |
 |---|---|
-| `NODE_ENV=production` | Bat cookie `Secure`, lang nghe `0.0.0.0`, bat buoc co `DATABASE_URL` |
-| `DATABASE_URL` | Chuoi ket noi Neon; dan nguyen `?sslmode=require&channel_binding=require` cung duoc |
+| `NODE_ENV=production` | Bat cookie `Secure`, bat buoc co `DATABASE_URL` |
+| `DATABASE_URL` | Neon, ban *pooled* (host `...-pooler...`), database `TranquilClinicDB` |
 | `JWT_SECRET` | Toi thieu 32 ky tu, khac ban dev |
-| `PORT`, `HOST` | Host thuong tu dat `PORT`; mac dinh `4000`, `0.0.0.0` |
-| `DB_POOL_MAX` | Mac dinh 10 |
-| `COOKIE_SECURE=false` | Chi khi chay ban production tren `http://127.0.0.1` (khong HTTPS) |
+| `DB_POOL_MAX=5` | So ket noi moi instance |
+| `NODEJS_HELPERS=0` | Tat helper `req.body`/`req.cookies` cua Vercel, de Express tu xu ly nhu khi chay o may |
+| `NEON_*` | Do Neon tu tao khi gan database (`NEON_DATABASE_URL` tro vao database `neondb` mac dinh) |
 
-Lenh trong `backend/`:
+Them / sua: `cd backend; npx vercel env add <TEN> --environment production` roi trien khai lai.
+Chay API o host khac (Render, Railway...): `npm start` (doc `backend/.env.production` neu co),
+them `PORT`, `HOST` (mac dinh `4000`, `0.0.0.0`); `COOKIE_SECURE=false` chi khi thu tren `http://127.0.0.1`.
 
-- `npm start`: production, doc `.env.production` neu co, neu khong dung bien moi truong cua host.
-- `npm run dev` / `npm run start:local`: may dev, doc `../.env` (Postgres Docker).
+### Database production
+
+`backend/.env.production` (Git bo qua; mau `backend/.env.production.example`) chua `DATABASE_URL` ket noi
+truc tiep toi Neon, role `neondb_owner`, dung cho cac lenh trong `backend/`:
+
+- `npm run db:deploy`: nap `db/schema.sql` + `db/seed.sql` (them `-- --schema-only` neu khong muon du lieu mau).
+  Database da co du lieu thi chi in so dong, khong ghi de.
 - `npm run set-password:prod -- <user> <mat khau>`: doi mat khau tren production. Mat khau mau
-  `Demo@123` ghi cong khai o tren, nen doi truoc khi mo website cho nguoi ngoai.
+  `Demo@123` ghi cong khai o tren, nen doi truoc khi dua website cho nguoi ngoai.
 
-Moi ket noi tu dat `SET TIME ZONE 'Asia/Ho_Chi_Minh'`, vi Neon mac dinh UTC.
-Frontend: dat `API_URL=https://<dia-chi-api>` truoc khi chay `npm run build`, vi Next.js ghi
-dia chi chuyen tiep `/api/*` vao ban build.
+Quan ly database: Vercel → project `phantomdental` → *Storage* → `phantom-clinic-db` → *Open in Neon*.
+API tu dat `SET TIME ZONE 'Asia/Ho_Chi_Minh'` cho moi ket noi (Neon mac dinh UTC); `db:deploy` cung dat
+mui gio mac dinh cua database.
 
 ## Quan ly
 

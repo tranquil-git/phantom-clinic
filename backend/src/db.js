@@ -36,7 +36,7 @@ export const pool = new pg.Pool({
       }),
   max: Number(process.env.DB_POOL_MAX ?? 10),
   idleTimeoutMillis: 30_000,        // trả kết nối rảnh để Neon được tự ngủ (scale to zero)
-  connectionTimeoutMillis: 15_000,  // Neon đang ngủ cần vài giây để thức
+  connectionTimeoutMillis: 25_000,  // lần đầu sau khi ngủ (Neon + Vercel) đo được ~15 giây; function Vercel cho tối đa 30 giây
 });
 
 // Ngày / ca khám tính theo giờ VN dù server DB đặt múi giờ nào (Neon mặc định UTC)
