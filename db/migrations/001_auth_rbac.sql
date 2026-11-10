@@ -104,14 +104,14 @@ JOIN permission p ON p.code = c.code;
 ALTER TABLE staff ADD COLUMN password_changed_at timestamptz NOT NULL DEFAULT now();
 UPDATE staff SET password_changed_at = created_at;
 
-CREATE FUNCTION staff_password_changed() RETURNS trigger LANGUAGE plpgsql AS $
+CREATE FUNCTION staff_password_changed() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.password_hash IS DISTINCT FROM OLD.password_hash
        AND NEW.password_changed_at IS NOT DISTINCT FROM OLD.password_changed_at THEN
         NEW.password_changed_at := now();
     END IF;
     RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER staff_password_changed BEFORE UPDATE OF password_hash ON staff
     FOR EACH ROW EXECUTE FUNCTION staff_password_changed();
 
