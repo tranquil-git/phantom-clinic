@@ -1,0 +1,5 @@
+# Không tải bí mật và file chỉ dùng ở máy lên Vercel; biến môi trường đặt trong project Vercel
+.env*
+!.env.production.example
+node_modules
+scripts

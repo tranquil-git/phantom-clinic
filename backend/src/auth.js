@@ -13,6 +13,16 @@ export const ALL_ROLES = [RECEPTIONIST, DENTIST, MANAGER];
 const COOKIE = 'clinic_token';
 const SECRET = process.env.JWT_SECRET;
 if (!SECRET) throw new Error('Thiếu JWT_SECRET trong .env');
+if (process.env.NODE_ENV === 'production' && SECRET.length < 32) {
+  throw new Error('JWT_SECRET production phải dài ít nhất 32 ký tự');
+}
+// Production chạy sau HTTPS → cookie Secure. Chạy bản production trên http://127.0.0.1 thì đặt COOKIE_SECURE=false.
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  path: '/',
+  secure: (process.env.COOKIE_SECURE ?? String(process.env.NODE_ENV === 'production')) === 'true',
+};
 
 // Định dạng lưu: scrypt$<salt base64>$<hash base64>
 export function hashPassword(password) {
@@ -67,12 +77,12 @@ authRouter.post('/login', async (req, res) => {
     throw new HttpError(401, 'Sai tên đăng nhập hoặc mật khẩu');
   }
   const token = jwt.sign({ sub: user.id }, SECRET, { expiresIn: '12h' });
-  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 12 * 3600 * 1000 });
+  res.cookie(COOKIE, token, { ...COOKIE_OPTIONS, maxAge: 12 * 3600 * 1000 });
   res.json({ id: user.id, full_name: user.full_name, role: user.role, username: user.username });
 });
 
 authRouter.post('/logout', (req, res) => {
-  res.clearCookie(COOKIE, { path: '/' });
+  res.clearCookie(COOKIE, COOKIE_OPTIONS);
   res.status(204).end();
 });
 

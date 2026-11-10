@@ -1,6 +1,10 @@
 .env
 .env.*
 !.env.example
+!.env.*.example
+# API_URL production của frontend, không có bí mật
+!frontend/.env.production
 .vscode/settings.json
 node_modules/
 .next/
+.vercel/

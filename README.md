@@ -68,6 +68,48 @@ So do man hinh va wireframe: `.claude/docs/man-hinh-tong-quan.drawio`
 
 Thu muc `web/` la web app san pham cu, doc bang `products` da xoa trong database `tranquil`.
 
+## Production: database tren Neon + cau hinh API
+
+Database online dung [Neon](https://neon.tech) goi Free: khong can the, region Singapore,
+tu ngu khi khong ai dung va thuc lai sau vai giay o request dau tien.
+
+1. Tren https://console.neon.tech tao project `phantom-clinic`, Postgres 17 hoac 18,
+   region `AWS Asia Pacific 1 (Singapore)`.
+2. Branch `main` → *Roles & Databases*: them role `TranAdmin`, them database
+   `TranquilClinicDB` voi owner `TranAdmin`.
+3. *Connect* → database `TranquilClinicDB`, role `TranAdmin`, tat *Connection pooling*,
+   chep chuoi ket noi vao `DATABASE_URL` trong `backend/.env.production`
+   (mau: `backend/.env.production.example`; file that bi Git bo qua).
+4. Nap bang + du lieu mau:
+
+   ```powershell
+   cd backend; npm run db:deploy          # them "-- --schema-only" neu khong muon du lieu mau
+   ```
+
+   Database da co du lieu thi script chi in so dong, khong ghi de.
+
+Bien moi truong cua API production (dat trong `backend/.env.production` hoac muc Environment cua host):
+
+| Bien | Ghi chu |
+|---|---|
+| `NODE_ENV=production` | Bat cookie `Secure`, lang nghe `0.0.0.0`, bat buoc co `DATABASE_URL` |
+| `DATABASE_URL` | Chuoi ket noi Neon; dan nguyen `?sslmode=require&channel_binding=require` cung duoc |
+| `JWT_SECRET` | Toi thieu 32 ky tu, khac ban dev |
+| `PORT`, `HOST` | Host thuong tu dat `PORT`; mac dinh `4000`, `0.0.0.0` |
+| `DB_POOL_MAX` | Mac dinh 10 |
+| `COOKIE_SECURE=false` | Chi khi chay ban production tren `http://127.0.0.1` (khong HTTPS) |
+
+Lenh trong `backend/`:
+
+- `npm start`: production, doc `.env.production` neu co, neu khong dung bien moi truong cua host.
+- `npm run dev` / `npm run start:local`: may dev, doc `../.env` (Postgres Docker).
+- `npm run set-password:prod -- <user> <mat khau>`: doi mat khau tren production. Mat khau mau
+  `Demo@123` ghi cong khai o tren, nen doi truoc khi mo website cho nguoi ngoai.
+
+Moi ket noi tu dat `SET TIME ZONE 'Asia/Ho_Chi_Minh'`, vi Neon mac dinh UTC.
+Frontend: dat `API_URL=https://<dia-chi-api>` truoc khi chay `npm run build`, vi Next.js ghi
+dia chi chuyen tiep `/api/*` vao ban build.
+
 ## Quan ly
 
 ```powershell
@@ -87,3 +129,4 @@ PostgreSQL chi duoc mo tren localhost. Image `postgres:18` dung duong dan volume
 
 `POSTGRES_USER`, `POSTGRES_PASSWORD` va `POSTGRES_DB` chi khoi tao khi volume rong.
 Sua `.env` sau khi khoi tao khong tu doi user, mat khau hoac database hien co.
+"# phantom-clinic" 

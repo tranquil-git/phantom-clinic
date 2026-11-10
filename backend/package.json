@@ -3,12 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --env-file=../.env src/server.js",
     "dev": "node --env-file=../.env --watch src/server.js",
-    "set-password": "node --env-file=../.env scripts/set-password.js"
+    "start:local": "node --env-file=../.env src/server.js",
+    "start": "node --env-file-if-exists=.env.production src/server.js",
+    "db:deploy": "node --env-file=.env.production scripts/deploy-db.js",
+    "set-password": "node --env-file=../.env scripts/set-password.js",
+    "set-password:prod": "node --env-file=.env.production scripts/set-password.js"
   },
   "engines": {
-    "node": ">=20.6"
+    "node": ">=22.9"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
