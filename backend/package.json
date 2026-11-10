@@ -1,0 +1,19 @@
+{
+  "name": "tranquil-clinic-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=../.env src/server.js",
+    "dev": "node --env-file=../.env --watch src/server.js",
+    "set-password": "node --env-file=../.env scripts/set-password.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3"
+  }
+}
