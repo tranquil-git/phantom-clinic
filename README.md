@@ -82,12 +82,20 @@ Trinh duyet chi goi `/api/*` tren website; Next.js chuyen tiep sang API (`fronte
 cung domain voi website. Lan dau sau mot luc khong ai dung, Neon va function Vercel phai thuc day
 nen request dau mat khoang 15 giay; cac request sau duoi 2 giay.
 
-### Trien khai lai
+### Trien khai
 
-```powershell
-cd backend;  npx vercel deploy --prod     # API: api/index.js xuat app Express, vercel.json chuyen moi duong dan vao do
-cd frontend; npx vercel deploy --prod     # Website
-```
+Ca hai project noi voi GitHub `tranquil-git/phantom-clinic`: moi lan `git push` len `main`, Vercel tu
+build lai ca hai (nhanh khac `main` thanh ban Preview). Moi project build mot thu muc con, dat trong
+*Settings → Build and Deployment → Root Directory*:
+
+| Project | Root Directory | Cach chay |
+|---|---|---|
+| `vndental` | `frontend` | Next.js |
+| `phantomdental` | `backend` | `api/index.js` xuat app Express; `vercel.json` chuyen moi duong dan vao do, region `sin1` |
+
+Root Directory de trong thi Vercel build ca repo va bao loi
+*Couldn't find any `pages` or `app` directory*. Trien khai lai khong can commit moi:
+Vercel → project → *Deployments* → *Redeploy*.
 
 Thu muc `.vercel/` (lien ket voi project) va `.env.local` do Vercel CLI tao, khong commit.
 `backend/.vercelignore` khong tai `.env*` va `scripts/` len Vercel.
