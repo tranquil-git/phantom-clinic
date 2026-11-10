@@ -1,0 +1,521 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model appointment {
+  id                                    BigInt                 @id @default(autoincrement())
+  patient_id                            BigInt
+  doctor_id                             BigInt
+  chair_id                              Int                    @db.SmallInt
+  appt_date                             DateTime               @db.Date
+  slot_time                             DateTime               @db.Time(6)
+  planned_service_id                    BigInt
+  status                                appointment_status     @default(booked)
+  note                                  String?
+  booked_by                             BigInt
+  booked_at                             DateTime               @default(now()) @db.Timestamptz(6)
+  checked_in_at                         DateTime?              @db.Timestamptz(6)
+  cancel_reason_id                      Int?                   @db.SmallInt
+  cancel_note                           String?
+  cancelled_by                          BigInt?
+  cancelled_at                          DateTime?              @db.Timestamptz(6)
+  staff_appointment_booked_byTostaff    staff                  @relation("appointment_booked_byTostaff", fields: [booked_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cancel_reason                         cancel_reason?         @relation(fields: [cancel_reason_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff_appointment_cancelled_byTostaff staff?                 @relation("appointment_cancelled_byTostaff", fields: [cancelled_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  chair                                 chair                  @relation(fields: [chair_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff_appointment_doctor_idTostaff    staff                  @relation("appointment_doctor_idTostaff", fields: [doctor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  patient                               patient                @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service                               service                @relation(fields: [planned_service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  appointment_reminder                  appointment_reminder[]
+  treatment_record                      treatment_record?
+
+  @@unique([chair_id, appt_date, slot_time], map: "appointment_chair_slot_uq", where: raw("(status <> 'cancelled'::appointment_status)"))
+  @@unique([doctor_id, appt_date, slot_time], map: "appointment_doctor_slot_uq", where: raw("(status <> 'cancelled'::appointment_status)"))
+  @@index([appt_date], map: "appointment_date_idx")
+  @@index([patient_id], map: "appointment_patient_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model appointment_reminder {
+  id             BigInt           @id @default(autoincrement())
+  appointment_id BigInt
+  channel        reminder_channel
+  result         reminder_result
+  note           String?
+  created_by     BigInt
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  appointment    appointment      @relation(fields: [appointment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff          staff            @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model audit_log {
+  id         BigInt   @id @default(autoincrement())
+  table_name String
+  row_id     BigInt
+  record_id  BigInt?
+  action     String
+  old_data   Json?
+  new_data   Json?
+  reason     String?
+  changed_by BigInt
+  changed_at DateTime @default(now()) @db.Timestamptz(6)
+  staff      staff    @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([record_id], map: "audit_log_record_idx")
+  @@index([table_name, row_id], map: "audit_log_row_idx")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model cancel_reason {
+  id          Int           @id @default(autoincrement()) @db.SmallInt
+  name        String        @unique
+  is_active   Boolean       @default(true)
+  appointment appointment[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model cash_closing {
+  closing_date  DateTime @id @db.Date
+  expected_cash Decimal  @db.Decimal(12, 0)
+  counted_cash  Decimal  @db.Decimal(12, 0)
+  difference    Decimal? @default(dbgenerated("(counted_cash - expected_cash)")) @db.Decimal(12, 0)
+  note          String?
+  closed_by     BigInt
+  closed_at     DateTime @default(now()) @db.Timestamptz(6)
+  staff         staff    @relation(fields: [closed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model chair {
+  id          Int           @id @default(autoincrement()) @db.SmallInt
+  name        String        @unique
+  is_active   Boolean       @default(true)
+  appointment appointment[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model doctor_shift {
+  id                                              BigInt     @id @default(autoincrement())
+  doctor_id                                       BigInt
+  doctor_role                                     staff_role @default(dentist)
+  shift_date                                      DateTime   @db.Date
+  start_time                                      DateTime   @db.Time(6)
+  end_time                                        DateTime   @db.Time(6)
+  created_by                                      BigInt
+  staff_doctor_shift_created_byTostaff            staff      @relation("doctor_shift_created_byTostaff", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff_doctor_shift_doctor_id_doctor_roleTostaff staff      @relation("doctor_shift_doctor_id_doctor_roleTostaff", fields: [doctor_id, doctor_role], references: [id, role], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([doctor_id, shift_date])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model inventory_item {
+  id                BigInt              @id @default(autoincrement())
+  kind              item_kind
+  name              String
+  unit              String
+  reorder_threshold Decimal             @default(0) @db.Decimal(12, 2)
+  sale_price        Decimal?            @db.Decimal(12, 0)
+  is_active         Boolean             @default(true)
+  prescription_item prescription_item[]
+  service_supply    service_supply[]
+  stock_movement    stock_movement[]
+
+  @@unique([id, kind])
+  @@unique([kind, name])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model invoice {
+  id                    BigInt            @id @default(autoincrement())
+  kind                  invoice_kind
+  record_id             BigInt?           @unique
+  installment_id        BigInt?           @unique
+  total_discount_amount Decimal           @default(0) @db.Decimal(12, 0)
+  discount_reason       String?
+  created_by            BigInt
+  created_at            DateTime          @default(now()) @db.Timestamptz(6)
+  staff                 staff             @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  plan_installment      plan_installment? @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  treatment_record      treatment_record? @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invoice_line          invoice_line[]
+  payment               payment[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model invoice_line {
+  id                   BigInt             @id @default(autoincrement())
+  invoice_id           BigInt
+  treatment_line_id    BigInt?            @unique
+  prescription_item_id BigInt?            @unique
+  description          String
+  quantity             Decimal            @default(1) @db.Decimal(12, 2)
+  unit_price           Decimal            @db.Decimal(12, 0)
+  discount_amount      Decimal            @default(0) @db.Decimal(12, 0)
+  doctor_id            BigInt?
+  amount               Decimal?           @default(dbgenerated("(round((quantity * unit_price)) - discount_amount)")) @db.Decimal(12, 0)
+  staff                staff?             @relation(fields: [doctor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invoice              invoice            @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  prescription_item    prescription_item? @relation(fields: [prescription_item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  treatment_line       treatment_line?    @relation(fields: [treatment_line_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([invoice_id], map: "invoice_line_invoice_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model login_attempt {
+  id         BigInt   @id @default(autoincrement())
+  username   String
+  staff_id   BigInt?
+  ip         String?
+  user_agent String?
+  method     String
+  success    Boolean
+  reason     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  staff      staff?   @relation(fields: [staff_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([ip, created_at(sort: Desc)], map: "login_attempt_ip_recent")
+  @@index([username, created_at(sort: Desc)], map: "login_attempt_username_recent")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model patient {
+  id                BigInt           @id @default(autoincrement())
+  full_name         String
+  date_of_birth     DateTime?        @db.Date
+  gender            String?
+  contact_phone     String
+  guardian_name     String?
+  guardian_relation String?
+  paper_record_no   String?
+  address           String?
+  medical_note      String?
+  is_active         Boolean          @default(true)
+  created_by        BigInt
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  appointment       appointment[]
+  staff             staff            @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  treatment_plan    treatment_plan[]
+
+  @@index([contact_phone])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model payment {
+  id          BigInt         @id @default(autoincrement())
+  invoice_id  BigInt
+  amount      Decimal        @db.Decimal(12, 0)
+  method      payment_method
+  received_by BigInt
+  received_at DateTime       @default(now()) @db.Timestamptz(6)
+  note        String?
+  invoice     invoice        @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff       staff          @relation(fields: [received_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([invoice_id], map: "payment_invoice_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model permission {
+  code            String            @id
+  module          String
+  description     String
+  role_permission role_permission[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model plan_installment {
+  id             BigInt         @id @default(autoincrement())
+  plan_id        BigInt
+  installment_no Int
+  amount         Decimal        @db.Decimal(12, 0)
+  due_date       DateTime       @db.Date
+  invoice        invoice?
+  treatment_plan treatment_plan @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([plan_id, installment_no])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model prescription_item {
+  id                  BigInt           @id @default(autoincrement())
+  record_id           BigInt
+  item_id             BigInt
+  item_kind           item_kind        @default(medicine)
+  dosage              String
+  quantity            Decimal          @db.Decimal(12, 2)
+  dispensed_in_clinic Boolean          @default(false)
+  invoice_line        invoice_line?
+  inventory_item      inventory_item   @relation(fields: [item_id, item_kind], references: [id, kind], onDelete: NoAction, onUpdate: NoAction)
+  treatment_record    treatment_record @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([record_id], map: "prescription_item_record_idx")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model role {
+  code                                       staff_role        @id
+  name                                       String
+  description                                String
+  role_permission_role_permission_roleTorole role_permission[] @relation("role_permission_roleTorole")
+  staff_staff_roleTorole                     staff[]           @relation("staff_roleTorole")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model role_permission {
+  role                            staff_role
+  permission_code                 String
+  granted_by                      BigInt?
+  granted_at                      DateTime   @default(now()) @db.Timestamptz(6)
+  staff                           staff?     @relation(fields: [granted_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  permission                      permission @relation(fields: [permission_code], references: [code], onDelete: Cascade)
+  role_role_permission_roleTorole role       @relation("role_permission_roleTorole", fields: [role], references: [code], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([role, permission_code])
+}
+
+model schema_migration {
+  name       String   @id
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model service {
+  id             BigInt           @id @default(autoincrement())
+  code           String           @unique
+  name           String
+  kind           service_kind     @default(single)
+  is_active      Boolean          @default(true)
+  appointment    appointment[]
+  service_price  service_price[]
+  service_supply service_supply[]
+  treatment_line treatment_line[]
+  treatment_plan treatment_plan[]
+
+  @@unique([id, kind])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model service_price {
+  service_id     BigInt
+  effective_from DateTime @db.Date
+  price          Decimal  @db.Decimal(12, 0)
+  created_by     BigInt
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  staff          staff    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service        service  @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([service_id, effective_from])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model service_supply {
+  service_id     BigInt
+  item_id        BigInt
+  item_kind      item_kind      @default(supply)
+  quantity       Decimal        @db.Decimal(12, 2)
+  inventory_item inventory_item @relation(fields: [item_id, item_kind], references: [id, kind], onDelete: NoAction, onUpdate: NoAction)
+  service        service        @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([service_id, item_id])
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model staff {
+  id                                                     BigInt                 @id @default(autoincrement())
+  full_name                                              String
+  phone                                                  String?
+  role                                                   staff_role
+  username                                               String                 @unique
+  password_hash                                          String
+  is_active                                              Boolean                @default(true)
+  created_at                                             DateTime               @default(now()) @db.Timestamptz(6)
+  password_changed_at                                    DateTime               @default(now()) @db.Timestamptz(6)
+  appointment_appointment_booked_byTostaff               appointment[]          @relation("appointment_booked_byTostaff")
+  appointment_appointment_cancelled_byTostaff            appointment[]          @relation("appointment_cancelled_byTostaff")
+  appointment_appointment_doctor_idTostaff               appointment[]          @relation("appointment_doctor_idTostaff")
+  appointment_reminder                                   appointment_reminder[]
+  audit_log                                              audit_log[]
+  cash_closing                                           cash_closing[]
+  doctor_shift_doctor_shift_created_byTostaff            doctor_shift[]         @relation("doctor_shift_created_byTostaff")
+  doctor_shift_doctor_shift_doctor_id_doctor_roleTostaff doctor_shift[]         @relation("doctor_shift_doctor_id_doctor_roleTostaff")
+  invoice                                                invoice[]
+  invoice_line                                           invoice_line[]
+  login_attempt                                          login_attempt[]
+  patient                                                patient[]
+  payment                                                payment[]
+  role_permission                                        role_permission[]
+  service_price                                          service_price[]
+  role_staff_roleTorole                                  role                   @relation("staff_roleTorole", fields: [role], references: [code], onDelete: NoAction, onUpdate: NoAction)
+  stock_movement                                         stock_movement[]
+  treatment_line                                         treatment_line[]
+  treatment_plan_treatment_plan_created_byTostaff        treatment_plan[]       @relation("treatment_plan_created_byTostaff")
+  treatment_plan_treatment_plan_doctor_idTostaff         treatment_plan[]       @relation("treatment_plan_doctor_idTostaff")
+  treatment_record                                       treatment_record[]
+
+  @@unique([id, role])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stock_movement {
+  id               BigInt              @id @default(autoincrement())
+  item_id          BigInt
+  movement_type    stock_movement_type
+  quantity         Decimal             @db.Decimal(12, 2)
+  record_id        BigInt?
+  note             String?
+  created_by       BigInt              @default(dbgenerated("current_staff_id()"))
+  created_at       DateTime            @default(now()) @db.Timestamptz(6)
+  staff            staff               @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_item   inventory_item      @relation(fields: [item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  treatment_record treatment_record?   @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([item_id], map: "stock_movement_item_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model treatment_line {
+  id               BigInt           @id @default(autoincrement())
+  record_id        BigInt
+  service_id       BigInt
+  tooth_code       String           @db.Char(2)
+  doctor_id        BigInt
+  plan_id          BigInt?
+  session_no       Int?
+  note             String?
+  invoice_line     invoice_line?
+  staff            staff            @relation(fields: [doctor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  treatment_plan   treatment_plan?  @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  treatment_record treatment_record @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service          service          @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([plan_id], map: "treatment_line_plan_idx", where: raw("(plan_id IS NOT NULL)"))
+  @@index([record_id], map: "treatment_line_record_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model treatment_plan {
+  id                                     BigInt             @id @default(autoincrement())
+  patient_id                             BigInt
+  service_id                             BigInt
+  service_kind                           service_kind       @default(plan)
+  doctor_id                              BigInt
+  total_price                            Decimal            @db.Decimal(12, 0)
+  planned_sessions                       Int
+  status                                 plan_status        @default(active)
+  started_on                             DateTime           @default(dbgenerated("local_date(now())")) @db.Date
+  closed_on                              DateTime?          @db.Date
+  note                                   String?
+  created_by                             BigInt
+  created_at                             DateTime           @default(now()) @db.Timestamptz(6)
+  plan_installment                       plan_installment[]
+  treatment_line                         treatment_line[]
+  staff_treatment_plan_created_byTostaff staff              @relation("treatment_plan_created_byTostaff", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff_treatment_plan_doctor_idTostaff  staff              @relation("treatment_plan_doctor_idTostaff", fields: [doctor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  patient                                patient            @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service                                service            @relation(fields: [service_id, service_kind], references: [id, kind], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model treatment_record {
+  id                BigInt              @id @default(autoincrement())
+  appointment_id    BigInt              @unique
+  diagnosis         String?
+  note              String?
+  created_by        BigInt
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  invoice           invoice?
+  prescription_item prescription_item[]
+  stock_movement    stock_movement[]
+  treatment_line    treatment_line[]
+  appointment       appointment         @relation(fields: [appointment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff             staff               @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+enum appointment_status {
+  booked
+  checked_in
+  no_show
+  cancelled
+}
+
+enum invoice_kind {
+  visit
+  installment
+}
+
+enum item_kind {
+  medicine
+  supply
+}
+
+enum payment_method {
+  cash
+  transfer
+}
+
+enum plan_status {
+  active
+  completed
+  cancelled
+}
+
+enum reminder_channel {
+  call
+  sms
+}
+
+enum reminder_result {
+  confirmed
+  wants_reschedule
+  wants_cancel
+  no_answer
+  sms_sent
+  sms_failed
+}
+
+enum service_kind {
+  single
+  plan
+}
+
+enum staff_role {
+  receptionist
+  dentist
+  manager
+}
+
+enum stock_movement_type {
+  receipt
+  treatment
+  dispense
+  manual_out
+  adjustment
+}

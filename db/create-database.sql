@@ -10,6 +10,6 @@ SELECT format('ALTER ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD 
 SELECT format('CREATE DATABASE %I OWNER %I ENCODING ''UTF8'' TEMPLATE template0', :'db_name', :'db_user')
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db_name') \gexec
 
--- Chỉ chủ database (và superuser) được kết nối; giờ mặc định theo phòng khám
+-- Chỉ chủ database (và superuser) được kết nối; phiên chạy UTC (Prisma cần), giờ VN đổi rõ ràng bằng local_date()
 SELECT format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', :'db_name') \gexec
-SELECT format('ALTER DATABASE %I SET timezone TO ''Asia/Ho_Chi_Minh''', :'db_name') \gexec
+SELECT format('ALTER DATABASE %I SET timezone TO ''UTC''', :'db_name') \gexec

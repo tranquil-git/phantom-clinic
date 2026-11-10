@@ -31,8 +31,9 @@ powershell -ExecutionPolicy Bypass -File db/create-database.ps1
 ```
 
 Tao user `TranAdmin` (chu database, khong phai superuser), database `TranquilClinicDB`,
-bang (`db/schema.sql`) va du lieu mau (`db/seed.sql`). Thong tin lay tu `CLINIC_DB_*`
-trong `.env`. Chay lai khong tao trung; database da co bang thi bo qua schema va seed.
+bang (`db/schema.sql`), du lieu mau (`db/seed.sql`) roi chay `db/migrations/*.sql` chua chay
+(can `cd backend; npm install` truoc). Thong tin lay tu `CLINIC_DB_*` trong `.env`.
+Chay lai khong tao trung; database da co bang thi bo qua schema va seed.
 Chi `TranAdmin` (va superuser) ket noi duoc. SQLTools: connection `TranquilClinicDB`.
 Thiet ke: `.claude/docs/use-case.md`, `.claude/docs/erd.md`.
 
@@ -67,6 +68,47 @@ So do man hinh va wireframe: `.claude/docs/man-hinh-tong-quan.drawio`
 (mo bang extension Draw.io Integration hoac app.diagrams.net).
 
 Thu muc `web/` la web app san pham cu, doc bang `products` da xoa trong database `tranquil`.
+
+## API: xac thuc, phan quyen (Prisma) va tai lieu Swagger
+
+Tai lieu API (Swagger UI, OpenAPI 3.1): http://127.0.0.1:4000/api/docs, file spec `/api/openapi.json`.
+Spec sinh tu chinh cac route Express (method, duong dan, ma quyen) va doc bang `role_permission`
+moi lan mo, nen cot "Vai tro dang co quyen" luon khop thuc te.
+
+**Xac thuc** (`backend/src/auth.js`): JWT HS256 han 12 gio.
+
+| Endpoint | Dung cho |
+|---|---|
+| `POST /api/auth/login` | Website: dat cookie httpOnly `clinic_token` |
+| `POST /api/auth/token` | Swagger / Postman: tra `access_token`, gui lai bang `Authorization: Bearer <token>` |
+| `GET /api/auth/me` | Nguoi dang nhap + danh sach ma quyen |
+| `POST /api/auth/change-password` | Doi mat khau (8–128 ky tu, co chu va so); moi token cu bi tu choi |
+| `POST /api/auth/logout` | Xoa cookie |
+
+Moi request API doc lai tai khoan tu DB: khoa tai khoan, doi vai tro, doi quyen, doi mat khau co hieu luc ngay.
+Sai mat khau 5 lan / 15 phut cho mot tai khoan tu mot IP → 429 (`Retry-After`); moi lan dang nhap ghi vao
+bang `login_attempt` (xem: `GET /api/login-attempts`).
+
+**Phan quyen (RBAC)**: moi endpoint gan `authorize('<ma quyen>')`, vd `patient.write`, `report.read`
+(30 ma quyen, 3 vai tro). Ma tran vai tro × ma quyen nam trong bang `role`, `permission`, `role_permission`;
+quan ly sua o trang **Phan quyen** cua website hoac `PUT /api/roles/{role}/permissions`. Quyen mac dinh
+giu dung phan quyen cu theo vai tro. Quan ly luon giu `permission.read` / `permission.manage` (trigger chan).
+Chua dang nhap → 401; dang nhap nhung thieu ma quyen → 403 (thong bao neu ten ma quyen).
+Menu website hien theo ma quyen trong `/api/auth/me`.
+
+**Prisma 7** (`prisma-client-js` + driver adapter `@prisma/adapter-pg`): module xac thuc va phan quyen
+(`src/auth.js`, `src/routes/security.js`, `src/openapi.js`) doc / ghi qua Prisma, dung chung pool `pg`
+voi cac module nghiep vu (van viet SQL vi dung trigger, view, bao cao phuc tap). Database-first:
+
+```powershell
+cd backend
+npm run db:migrate      # chay db/migrations/*.sql chua chay (ghi vao bang schema_migration)
+npm run db:pull         # cap nhat prisma/schema.prisma tu database (27 model)
+npx prisma generate     # sinh Prisma Client (npm install tu chay qua postinstall)
+npm test                # 17 test xac thuc & phan quyen tren database o may (tu tra lai du lieu)
+```
+
+Them bang / cot: viet file `db/migrations/NNN_ten.sql` (khong tu BEGIN/COMMIT), chay `db:migrate` roi `db:pull`.
 
 ## Production (Vercel + Neon)
 
@@ -126,8 +168,9 @@ truc tiep toi Neon, role `neondb_owner`, dung cho cac lenh trong `backend/`:
   `Demo@123` ghi cong khai o tren, nen doi truoc khi dua website cho nguoi ngoai.
 
 Quan ly database: Vercel → project `phantomdental` → *Storage* → `phantom-clinic-db` → *Open in Neon*.
-API tu dat `SET TIME ZONE 'Asia/Ho_Chi_Minh'` cho moi ket noi (Neon mac dinh UTC); `db:deploy` cung dat
-mui gio mac dinh cua database.
+Phien database chay UTC (Prisma doc / ghi `timestamptz` nhu the phien la UTC; migration `002_utc_sessions.sql`,
+`db:deploy` va API deu dat UTC). Ngay gio phong kham tinh ro rang bang `local_date()` / `AT TIME ZONE 'Asia/Ho_Chi_Minh'`
+trong SQL va `todayLocal()` trong JS; website hien gio theo `Asia/Ho_Chi_Minh`.
 
 ## Quan ly
 

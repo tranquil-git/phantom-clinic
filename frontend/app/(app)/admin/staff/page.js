@@ -43,7 +43,7 @@ export default function StaffPage() {
           <Field label="SĐT"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Vai trò"><RoleSelect value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></Field>
           <Field label="Tên đăng nhập"><input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required autoComplete="off" /></Field>
-          <Field label="Mật khẩu" hint="tối thiểu 6 ký tự"><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} autoComplete="new-password" /></Field>
+          <Field label="Mật khẩu" hint="8–128 ký tự, có chữ và số"><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} autoComplete="new-password" /></Field>
           <button className="btn btn-primary" disabled={action.busy}>+ Tạo</button>
         </div>
       </form>

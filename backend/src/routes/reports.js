@@ -1,6 +1,6 @@
 // UC70 – UC79: tám câu quản lý hỏi hằng tháng + đối soát ngày; trang tổng quan
 import { Router } from 'express';
-import { ALL_ROLES, DENTIST, MANAGER, requireRole } from '../auth.js';
+import { authorize, DENTIST } from '../auth.js';
 import { query, queryOne } from '../db.js';
 import { HttpError } from '../errors.js';
 import { addDays, month, todayLocal } from '../validate.js';
@@ -136,6 +136,7 @@ const REPORTS = {
       WHERE cc.closing_date >= $1 AND cc.closing_date < $2 ORDER BY cc.closing_date`,
   },
 };
+export const REPORT_KEYS = Object.keys(REPORTS); // dùng cho tài liệu Swagger (enum của :key)
 
 const SHORT_TITLES = {
   'revenue-by-doctor': 'Q1 Doanh thu bác sĩ', 'chair-idle': 'Q2 Ghế trống', 'lapsed-patients': 'Q3 Lâu chưa quay lại',
@@ -143,11 +144,11 @@ const SHORT_TITLES = {
   'revenue-compare': 'Q8 So tháng trước', 'cash-closings': 'Đối soát két',
 };
 
-reportsRouter.get('/reports', requireRole(MANAGER), (req, res) => {
+reportsRouter.get('/reports', authorize('report.read'), (req, res) => {
   res.json(Object.entries(REPORTS).map(([key, r]) => ({ key, title: r.title, short: SHORT_TITLES[key] })));
 });
 
-reportsRouter.get('/reports/:key', requireRole(MANAGER), async (req, res) => {
+reportsRouter.get('/reports/:key', authorize('report.read'), async (req, res) => {
   const report = REPORTS[req.params.key];
   if (!report) throw new HttpError(404, 'Không có báo cáo này');
   const m = month(req.query.month);
@@ -170,7 +171,7 @@ reportsRouter.get('/reports/:key', requireRole(MANAGER), async (req, res) => {
 });
 
 // Trang tổng quan theo vai trò
-reportsRouter.get('/dashboard', requireRole(...ALL_ROLES), async (req, res) => {
+reportsRouter.get('/dashboard', authorize('dashboard.read'), async (req, res) => {
   const today = todayLocal();
   const tomorrow = addDays(today, 1);
   const mine = req.user.role === DENTIST ? req.user.id : null;

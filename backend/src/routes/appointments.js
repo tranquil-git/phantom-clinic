@@ -1,6 +1,6 @@
 // UC20 – UC29: lịch hẹn, khung trống, đặt / đổi / hủy, tiếp đón, không đến, khách không hẹn, nhắc hẹn
 import { Router } from 'express';
-import { ALL_ROLES, DENTIST, RECEPTIONIST, requireRole } from '../auth.js';
+import { authorize, can } from '../auth.js';
 import { query, queryOne, tx } from '../db.js';
 import { HttpError } from '../errors.js';
 import { addDays, date, id, oneOf, optId, optText, time, todayLocal } from '../validate.js';
@@ -45,7 +45,7 @@ async function freeChair(client, apptDate, slotTime, exceptId = null) {
 }
 
 // UC20
-appointmentsRouter.get('/', requireRole(...ALL_ROLES), async (req, res) => {
+appointmentsRouter.get('/', authorize('appointment.read'), async (req, res) => {
   const day = date(req.query.date ?? todayLocal(), 'Ngày');
   const doctorId = optId(req.query.doctor_id, 'Bác sĩ');
   res.json(await query(`${LIST_SQL}
@@ -54,7 +54,7 @@ appointmentsRouter.get('/', requireRole(...ALL_ROLES), async (req, res) => {
 });
 
 // UC21: khung có bác sĩ đang trực, bác sĩ còn rảnh và còn ít nhất một ghế (LN-03, LN-11)
-appointmentsRouter.get('/slots', requireRole(RECEPTIONIST, DENTIST), async (req, res) => {
+appointmentsRouter.get('/slots', authorize('appointment.create'), async (req, res) => {
   const day = date(req.query.date, 'Ngày');
   const doctorId = optId(req.query.doctor_id, 'Bác sĩ');
   const exceptId = optId(req.query.except_id, 'Lịch hẹn');
@@ -83,7 +83,7 @@ appointmentsRouter.get('/slots', requireRole(RECEPTIONIST, DENTIST), async (req,
 });
 
 // UC22 (+ UC29 khách không hẹn: walk_in = true → check-in luôn)
-appointmentsRouter.post('/', requireRole(RECEPTIONIST, DENTIST), async (req, res) => {
+appointmentsRouter.post('/', authorize('appointment.create'), async (req, res) => {
   const b = req.body ?? {};
   const patientId = id(b.patient_id, 'Bệnh nhân');
   const doctorId = id(b.doctor_id, 'Bác sĩ');
@@ -94,7 +94,7 @@ appointmentsRouter.post('/', requireRole(RECEPTIONIST, DENTIST), async (req, res
   const today = todayLocal();
   if (apptDate < today) throw new HttpError(400, 'Không đặt lịch vào ngày đã qua');
   if (walkIn && apptDate !== today) throw new HttpError(400, 'Khách không hẹn chỉ tiếp nhận trong ngày');
-  if (walkIn && req.user.role !== RECEPTIONIST) throw new HttpError(403, 'Chỉ lễ tân tiếp nhận khách không hẹn');
+  if (walkIn && !can(req, 'appointment.walk_in')) throw new HttpError(403, 'Không có quyền appointment.walk_in (tiếp nhận khách không hẹn)');
 
   const row = await tx(req.user.id, async (client) => {
     const { rows: [patient] } = await client.query('SELECT is_active FROM patient WHERE id = $1', [patientId]);
@@ -112,7 +112,7 @@ appointmentsRouter.post('/', requireRole(RECEPTIONIST, DENTIST), async (req, res
 });
 
 // UC23
-appointmentsRouter.post('/:id/reschedule', requireRole(RECEPTIONIST), async (req, res) => {
+appointmentsRouter.post('/:id/reschedule', authorize('appointment.manage'), async (req, res) => {
   const b = req.body ?? {};
   const doctorId = id(b.doctor_id, 'Bác sĩ');
   const apptDate = date(b.appt_date, 'Ngày hẹn');
@@ -131,7 +131,7 @@ appointmentsRouter.post('/:id/reschedule', requireRole(RECEPTIONIST), async (req
 });
 
 // UC24 (LN-10: lý do, ai hủy, lúc nào)
-appointmentsRouter.post('/:id/cancel', requireRole(RECEPTIONIST), async (req, res) => {
+appointmentsRouter.post('/:id/cancel', authorize('appointment.manage'), async (req, res) => {
   const reasonId = id(req.body?.cancel_reason_id, 'Lý do hủy');
   await tx(req.user.id, async (client) => {
     const appt = await getAppointment(client, req.params.id);
@@ -145,7 +145,7 @@ appointmentsRouter.post('/:id/cancel', requireRole(RECEPTIONIST), async (req, re
 });
 
 // UC27
-appointmentsRouter.post('/:id/check-in', requireRole(RECEPTIONIST), async (req, res) => {
+appointmentsRouter.post('/:id/check-in', authorize('appointment.manage'), async (req, res) => {
   await tx(req.user.id, async (client) => {
     const appt = await getAppointment(client, req.params.id);
     if (appt.status !== 'booked') throw new HttpError(409, 'Lịch này không ở trạng thái chờ tiếp đón');
@@ -159,7 +159,7 @@ appointmentsRouter.post('/:id/check-in', requireRole(RECEPTIONIST), async (req, 
 });
 
 // UC28
-appointmentsRouter.post('/:id/no-show', requireRole(RECEPTIONIST), async (req, res) => {
+appointmentsRouter.post('/:id/no-show', authorize('appointment.manage'), async (req, res) => {
   await tx(req.user.id, async (client) => {
     const appt = await getAppointment(client, req.params.id);
     if (appt.status !== 'booked') throw new HttpError(409, 'Lịch này không ở trạng thái chờ tiếp đón');
@@ -170,7 +170,7 @@ appointmentsRouter.post('/:id/no-show', requireRole(RECEPTIONIST), async (req, r
 });
 
 // UC25: danh sách hẹn cần nhắc (mặc định ngày mai) kèm nhật ký nhắc
-remindersRouter.get('/', requireRole(RECEPTIONIST), async (req, res) => {
+remindersRouter.get('/', authorize('reminder.manage'), async (req, res) => {
   const day = date(req.query.date ?? addDays(todayLocal(), 1), 'Ngày');
   res.json(await query(`
     SELECT a.id, a.appt_date, a.slot_time, p.id AS patient_id, p.full_name AS patient_name, p.contact_phone,
@@ -198,7 +198,7 @@ function sendSms(phone, message) {
 }
 
 // UC25 ghi kết quả gọi, UC26 gửi tin nhắn
-remindersRouter.post('/', requireRole(RECEPTIONIST), async (req, res) => {
+remindersRouter.post('/', authorize('reminder.manage'), async (req, res) => {
   const b = req.body ?? {};
   const appointmentId = id(b.appointment_id, 'Lịch hẹn');
   const channel = oneOf(b.channel, ['call', 'sms'], 'Kênh nhắc');

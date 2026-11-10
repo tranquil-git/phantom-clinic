@@ -1,7 +1,7 @@
 # Thiết kế CSDL — Phòng khám Nha khoa Nụ Cười Việt
 
 > Đi từ [use-case.md](use-case.md). DDL đầy đủ: [db/schema.sql](../../db/schema.sql). Dữ liệu mẫu: [db/seed.sql](../../db/seed.sql). Database: `TranquilClinicDB`.
-> PostgreSQL 18. Tiền VND kiểu `numeric(12,0)`. Ngày giờ phòng khám theo `Asia/Ho_Chi_Minh` (hàm `local_date()`).
+> PostgreSQL 18. Tiền VND kiểu `numeric(12,0)`. Ngày giờ phòng khám theo `Asia/Ho_Chi_Minh` (hàm `local_date()`); phiên database chạy UTC (Prisma cần, migration 002).
 
 ---
 
@@ -213,6 +213,11 @@ Hai bảng không có quan hệ khóa ngoại nên không vẽ: **`cash_closing`
 | | `payment` | một lần thu | UC44 |
 | | `cash_closing` | kết quả chốt két một ngày | UC45, UC79 |
 | Kiểm soát | `audit_log` | một lần thêm / sửa / xóa trên phiếu hoặc liệu trình | UC35, UC36 |
+| Xác thực & phân quyền (migration 001) | `role` | một vai trò (3 vai trò cố định, khóa ngoại của `staff.role`) | UC01, UC63 |
+| | `permission` | một mã quyền gọi API (`patient.write`, `report.read`…) | UC01 |
+| | `role_permission` | vai trò được cấp một mã quyền (ma trận phân quyền, sửa qua API) | UC01, UC63 |
+| | `login_attempt` | một lần đăng nhập đúng / sai (chặn dò mật khẩu, nhật ký) | UC01 |
+| | `schema_migration` | một file `db/migrations/*.sql` đã chạy | — |
 
 **View** (không lưu, tính khi đọc): `invoice_balance` (tổng / đã thu / còn nợ từng hóa đơn), `inventory_stock` (tồn kho, cờ dưới ngưỡng), `plan_progress` (số buổi đã làm, còn lại, đã thu của liệu trình).
 
@@ -295,9 +300,11 @@ powershell -ExecutionPolicy Bypass -File db/create-database.ps1
 
 | File | Việc |
 |---|---|
-| [db/create-database.sql](../../db/create-database.sql) | Tạo user `TranAdmin` (chủ database, không phải superuser) và database `TranquilClinicDB`; chặn user khác kết nối; múi giờ mặc định `Asia/Ho_Chi_Minh` |
+| [db/create-database.sql](../../db/create-database.sql) | Tạo user `TranAdmin` (chủ database, không phải superuser) và database `TranquilClinicDB`; chặn user khác kết nối; múi giờ phiên mặc định `UTC` |
 | [db/schema.sql](../../db/schema.sql) | 22 bảng, 3 view, trigger — chạy bằng `TranAdmin` để bảng thuộc về user này |
 | [db/seed.sql](../../db/seed.sql) | Dữ liệu mẫu cho mọi bảng, "hôm nay" là 2026-11-03 |
+| [db/migrations/001_auth_rbac.sql](../../db/migrations/001_auth_rbac.sql) | `role`, `permission` (30 mã), `role_permission` (quyền mặc định = phân quyền cũ theo vai trò), `login_attempt`, cột `staff.password_changed_at` + trigger; trigger giữ quyền phân quyền của Quản lý. Chạy bằng `backend/scripts/migrate.js` |
+| [db/migrations/002_utc_sessions.sql](../../db/migrations/002_utc_sessions.sql) | Múi giờ phiên mặc định của database → `UTC` (Prisma đọc / ghi `timestamptz` như thể phiên là UTC; nghiệp vụ đổi giờ VN rõ ràng bằng `local_date()`) |
 
 Tên user, database, mật khẩu lấy từ `CLINIC_DB_*` trong `.env`. Script chép file vào container rồi chạy bằng `-f` để giữ nguyên tiếng Việt có dấu. Mỗi file chạy trong một transaction: lỗi giữa chừng thì không tạo gì. Database đã có bảng thì script bỏ qua schema và seed.
 

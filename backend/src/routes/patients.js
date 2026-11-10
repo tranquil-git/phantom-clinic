@@ -1,6 +1,6 @@
 // UC10 – UC13: tra cứu, tạo, cập nhật hồ sơ, xem lịch sử điều trị
 import { Router } from 'express';
-import { ALL_ROLES, RECEPTIONIST, requireRole } from '../auth.js';
+import { authorize } from '../auth.js';
 import { query, queryOne } from '../db.js';
 import { HttpError } from '../errors.js';
 import { ageOn, optDate, optOneOf, optText, text } from '../validate.js';
@@ -35,7 +35,7 @@ function patientInput(b = {}) {
 const FIELDS = ['full_name', 'date_of_birth', 'gender', 'contact_phone', 'guardian_name',
   'guardian_relation', 'paper_record_no', 'address', 'medical_note'];
 
-patientsRouter.get('/', requireRole(...ALL_ROLES), async (req, res) => {
+patientsRouter.get('/', authorize('patient.read'), async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   const rows = await query(`
     SELECT p.id, p.full_name, p.date_of_birth, p.gender, p.contact_phone, p.guardian_name,
@@ -53,7 +53,7 @@ patientsRouter.get('/', requireRole(...ALL_ROLES), async (req, res) => {
   res.json(rows);
 });
 
-patientsRouter.post('/', requireRole(RECEPTIONIST), async (req, res) => {
+patientsRouter.post('/', authorize('patient.write'), async (req, res) => {
   const p = patientInput(req.body);
   const row = await queryOne(`
     INSERT INTO patient (${FIELDS.join(', ')}, created_by)
@@ -62,7 +62,7 @@ patientsRouter.post('/', requireRole(RECEPTIONIST), async (req, res) => {
   res.status(201).json(row);
 });
 
-patientsRouter.put('/:id', requireRole(RECEPTIONIST), async (req, res) => {
+patientsRouter.put('/:id', authorize('patient.write'), async (req, res) => {
   const p = patientInput(req.body);
   const isActive = req.body?.is_active !== false;
   const row = await queryOne(`
@@ -73,7 +73,7 @@ patientsRouter.put('/:id', requireRole(RECEPTIONIST), async (req, res) => {
   res.json(row);
 });
 
-patientsRouter.get('/:id', requireRole(...ALL_ROLES), async (req, res) => {
+patientsRouter.get('/:id', authorize('patient.read'), async (req, res) => {
   const patient = await queryOne('SELECT * FROM patient WHERE id = $1', [req.params.id]);
   if (!patient) throw new HttpError(404, 'Không tìm thấy bệnh nhân');
 

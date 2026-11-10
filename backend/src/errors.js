@@ -1,7 +1,9 @@
 export class HttpError extends Error {
-  constructor(status, message) {
+  // extra: { retryAfter } cho 429 (header Retry-After, giây)
+  constructor(status, message, extra = {}) {
     super(message);
     this.status = status;
+    Object.assign(this, extra);
   }
 }
 
@@ -13,6 +15,8 @@ const CONSTRAINT_MESSAGES = {
   treatment_line_tooth_code_check: 'Số răng không hợp lệ (FDI 11–48, 51–85; 00 cả miệng, 01 hàm trên, 02 hàm dưới)',
   patient_contact_phone_check: 'Số điện thoại phải gồm 10–11 chữ số, bắt đầu bằng 0',
   staff_username_key: 'Tên đăng nhập đã tồn tại',
+  role_permission_permission_code_fkey: 'Mã quyền không tồn tại',
+  role_permission_pkey: 'Vai trò đã có quyền này',
   service_code_key: 'Mã dịch vụ đã tồn tại',
   service_price_pkey: 'Dịch vụ đã có giá cho ngày hiệu lực này',
   cash_closing_pkey: 'Ngày này đã chốt két',
@@ -36,8 +40,20 @@ const CODE_MESSAGES = {
   22008: 'Ngày giờ không hợp lệ',
 };
 
-export function errorHandler(err, req, res, next) {
+// Lỗi Prisma bọc lỗi Postgres gốc trong meta.driverAdapterError.cause → đưa về dạng lỗi của pg
+// (code SQLSTATE, tên ràng buộc, thông báo trigger) để xử lý chung một chỗ bên dưới.
+function fromPrisma(err) {
+  if (err?.name !== 'PrismaClientKnownRequestError') return err;
+  if (err.code === 'P2025') return new HttpError(404, 'Không tìm thấy dữ liệu');
+  const cause = err.meta?.driverAdapterError?.cause;
+  if (!cause?.originalCode) return err;
+  return { code: cause.originalCode, constraint: cause.constraint?.index, message: cause.originalMessage };
+}
+
+export function errorHandler(rawErr, req, res, next) {
+  const err = fromPrisma(rawErr);
   if (err instanceof HttpError) {
+    if (err.status === 429 && err.retryAfter) res.set('Retry-After', String(err.retryAfter));
     return res.status(err.status).json({ error: err.message });
   }
   if (err.code === 'P0001') {
@@ -52,6 +68,6 @@ export function errorHandler(err, req, res, next) {
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'Dữ liệu gửi lên không phải JSON hợp lệ' });
   }
-  console.error(err);
+  console.error(rawErr);
   res.status(500).json({ error: 'Lỗi máy chủ' });
 }

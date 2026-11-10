@@ -1,6 +1,6 @@
 // UC30 – UC36: danh sách chờ khám, phiếu điều trị, dòng việc, đơn thuốc, liệu trình, lịch sử sửa
 import { Router } from 'express';
-import { ALL_ROLES, DENTIST, MANAGER, requireRole } from '../auth.js';
+import { authorize, DENTIST } from '../auth.js';
 import { query, queryOne, tx } from '../db.js';
 import { HttpError } from '../errors.js';
 import { assertBillingOpen, rebuildInvoice } from '../invoicing.js';
@@ -34,7 +34,7 @@ function assertOwner(record, user) {
 }
 
 // UC30
-treatmentRouter.get('/queue', requireRole(DENTIST, MANAGER), async (req, res) => {
+treatmentRouter.get('/queue', authorize('queue.read'), async (req, res) => {
   const day = date(req.query.date ?? todayLocal(), 'Ngày');
   res.json(await query(`
     SELECT a.id AS appointment_id, a.slot_time, a.checked_in_at, p.id AS patient_id, p.full_name AS patient_name,
@@ -52,7 +52,7 @@ treatmentRouter.get('/queue', requireRole(DENTIST, MANAGER), async (req, res) =>
 });
 
 // UC31: mở phiếu cho lịch đã check-in
-treatmentRouter.post('/records', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.post('/records', authorize('record.write'), async (req, res) => {
   const appointmentId = id(req.body?.appointment_id, 'Lịch hẹn');
   const row = await tx(req.user.id, async (client) => {
     const { rows: [appt] } = await client.query(
@@ -70,7 +70,7 @@ treatmentRouter.post('/records', requireRole(DENTIST), async (req, res) => {
   res.status(201).json(row);
 });
 
-treatmentRouter.get('/records/:id', requireRole(...ALL_ROLES), async (req, res) => {
+treatmentRouter.get('/records/:id', authorize('record.read'), async (req, res) => {
   const record = await queryOne(`
     SELECT r.id, r.diagnosis, r.note, r.created_by, r.created_at, cb.full_name AS created_by_name,
            a.id AS appointment_id, a.appt_date, a.slot_time, c.name AS chair_name,
@@ -118,7 +118,7 @@ treatmentRouter.get('/records/:id', requireRole(...ALL_ROLES), async (req, res) 
 });
 
 // UC35: sửa chẩn đoán / ghi chú
-treatmentRouter.put('/records/:id', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.put('/records/:id', authorize('record.write'), async (req, res) => {
   const reason = optText(req.body?.reason);
   await tx(req.user.id, async (client) => {
     const record = await lockRecord(client, req.params.id);
@@ -130,7 +130,7 @@ treatmentRouter.put('/records/:id', requireRole(DENTIST), async (req, res) => {
 });
 
 // UC31 thêm việc; UC33 ghi buổi vào liệu trình (tự đánh buổi thứ n)
-treatmentRouter.post('/records/:id/lines', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.post('/records/:id/lines', authorize('record.write'), async (req, res) => {
   const b = req.body ?? {};
   const serviceId = id(b.service_id, 'Dịch vụ');
   const toothCode = tooth(b.tooth_code);
@@ -164,7 +164,7 @@ treatmentRouter.post('/records/:id/lines', requireRole(DENTIST), async (req, res
   res.status(201).json(row);
 });
 
-treatmentRouter.put('/lines/:id', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.put('/lines/:id', authorize('record.write'), async (req, res) => {
   const b = req.body ?? {};
   await tx(req.user.id, async (client) => {
     const { rows: [line] } = await client.query('SELECT * FROM treatment_line WHERE id = $1', [req.params.id]);
@@ -184,7 +184,7 @@ treatmentRouter.put('/lines/:id', requireRole(DENTIST), async (req, res) => {
   res.json({ ok: true });
 });
 
-treatmentRouter.delete('/lines/:id', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.delete('/lines/:id', authorize('record.write'), async (req, res) => {
   await tx(req.user.id, async (client) => {
     const { rows: [line] } = await client.query('SELECT * FROM treatment_line WHERE id = $1', [req.params.id]);
     if (!line) throw new HttpError(404, 'Không tìm thấy dòng việc');
@@ -199,7 +199,7 @@ treatmentRouter.delete('/lines/:id', requireRole(DENTIST), async (req, res) => {
 });
 
 // UC32
-treatmentRouter.post('/records/:id/prescriptions', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.post('/records/:id/prescriptions', authorize('record.write'), async (req, res) => {
   const b = req.body ?? {};
   const dispensed = b.dispensed_in_clinic === true;
   const row = await tx(req.user.id, async (client) => {
@@ -216,7 +216,7 @@ treatmentRouter.post('/records/:id/prescriptions', requireRole(DENTIST), async (
   res.status(201).json(row);
 });
 
-treatmentRouter.delete('/prescriptions/:id', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.delete('/prescriptions/:id', authorize('record.write'), async (req, res) => {
   await tx(req.user.id, async (client) => {
     const { rows: [item] } = await client.query('SELECT * FROM prescription_item WHERE id = $1', [req.params.id]);
     if (!item) throw new HttpError(404, 'Không tìm thấy thuốc trong đơn');
@@ -233,7 +233,7 @@ treatmentRouter.delete('/prescriptions/:id', requireRole(DENTIST), async (req, r
 // ---------------------------------------------------------------------
 // Liệu trình (UC34, UC76)
 // ---------------------------------------------------------------------
-treatmentRouter.get('/plans', requireRole(...ALL_ROLES), async (req, res) => {
+treatmentRouter.get('/plans', authorize('plan.read'), async (req, res) => {
   const status = req.query.status ? oneOf(req.query.status, ['active', 'completed', 'cancelled'], 'Trạng thái') : null;
   res.json(await query(`
     SELECT pp.*, p.full_name AS patient_name, p.contact_phone, sv.name AS service_name, s.full_name AS doctor_name,
@@ -249,7 +249,7 @@ treatmentRouter.get('/plans', requireRole(...ALL_ROLES), async (req, res) => {
     ORDER BY pp.status, pp.sessions_left, p.full_name`, [status]));
 });
 
-treatmentRouter.get('/plans/:id', requireRole(...ALL_ROLES), async (req, res) => {
+treatmentRouter.get('/plans/:id', authorize('plan.read'), async (req, res) => {
   const plan = await queryOne(`
     SELECT pp.*, tp.started_on, tp.closed_on, tp.note, p.full_name AS patient_name, p.contact_phone,
            sv.name AS service_name, s.full_name AS doctor_name
@@ -287,7 +287,7 @@ treatmentRouter.get('/plans/:id', requireRole(...ALL_ROLES), async (req, res) =>
 });
 
 // UC34: tổng các đợt phải bằng tổng giá (GT-23)
-treatmentRouter.post('/plans', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.post('/plans', authorize('plan.write'), async (req, res) => {
   const b = req.body ?? {};
   const total = money(b.total_price, 'Tổng giá', 1);
   const sessions = id(b.planned_sessions, 'Số buổi dự kiến');
@@ -316,7 +316,7 @@ treatmentRouter.post('/plans', requireRole(DENTIST), async (req, res) => {
 });
 
 // Đổi số buổi dự kiến / đóng liệu trình — có ghi lịch sử
-treatmentRouter.patch('/plans/:id', requireRole(DENTIST), async (req, res) => {
+treatmentRouter.patch('/plans/:id', authorize('plan.write'), async (req, res) => {
   const b = req.body ?? {};
   await tx(req.user.id, async (client) => {
     const { rows: [plan] } = await client.query('SELECT * FROM treatment_plan WHERE id = $1 FOR UPDATE', [req.params.id]);

@@ -6,6 +6,11 @@
     "dev": "node --env-file=../.env --watch src/server.js",
     "start:local": "node --env-file=../.env src/server.js",
     "start": "node --env-file-if-exists=.env.production src/server.js",
+    "postinstall": "prisma generate",
+    "test": "node --env-file=../.env --test \"test/*.test.js\"",
+    "db:migrate": "node --env-file=../.env scripts/migrate.js",
+    "db:migrate:prod": "node --env-file=.env.production scripts/migrate.js",
+    "db:pull": "node --env-file=../.env node_modules/prisma/build/index.js db pull",
     "db:deploy": "node --env-file=.env.production scripts/deploy-db.js",
     "set-password": "node --env-file=../.env scripts/set-password.js",
     "set-password:prod": "node --env-file=.env.production scripts/set-password.js"
@@ -14,9 +19,12 @@
     "node": ">=22.9"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "prisma": "7.10.1"
   }
 }

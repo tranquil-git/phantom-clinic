@@ -6,7 +6,9 @@ pg.types.setTypeParser(1082, (v) => v);           // date giữ nguyên 'YYYY-MM
 pg.types.setTypeParser(1083, (v) => v.slice(0, 5)); // time → 'HH:MM'
 
 // Production (Neon…): DATABASE_URL. Máy dev: các biến CLINIC_DB_* trỏ vào Postgres Docker.
-const TIMEZONE = 'Asia/Ho_Chi_Minh';
+// Phiên DB chạy UTC (Prisma đọc / ghi timestamptz như thể phiên là UTC). Ngày giờ Việt Nam tính rõ ràng:
+// local_date() / AT TIME ZONE 'Asia/Ho_Chi_Minh' trong SQL, todayLocal() trong JS.
+const TIMEZONE = 'UTC';
 
 function urlConfig(raw) {
   const url = new URL(raw);
@@ -39,7 +41,7 @@ export const pool = new pg.Pool({
   connectionTimeoutMillis: 25_000,  // lần đầu sau khi ngủ (Neon + Vercel) đo được ~15 giây; function Vercel cho tối đa 30 giây
 });
 
-// Ngày / ca khám tính theo giờ VN dù server DB đặt múi giờ nào (Neon mặc định UTC)
+// Database cũng đặt mặc định UTC (db/migrations/002); SET ở đây giữ đúng cả khi chạy trên database chưa migrate
 pool.on('connect', (client) => {
   client.query(`SET TIME ZONE '${TIMEZONE}'`).catch(() => {});
 });

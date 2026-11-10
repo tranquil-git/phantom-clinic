@@ -1,6 +1,6 @@
 // UC41 – UC45: lập hóa đơn lượt khám / đợt liệu trình, giảm giá, thu tiền, chốt két
 import { Router } from 'express';
-import { ALL_ROLES, MANAGER, RECEPTIONIST, requireRole } from '../auth.js';
+import { authorize } from '../auth.js';
 import { pool, query, queryOne, tx } from '../db.js';
 import { HttpError } from '../errors.js';
 import { billableLines, insertLine } from '../invoicing.js';
@@ -19,7 +19,7 @@ const PATIENT_OF_RECORD = `
   WHERE r.id = $1`;
 
 // Phiếu chờ lập hóa đơn + đợt liệu trình chưa lập hóa đơn
-billingRouter.get('/billing/pending', requireRole(RECEPTIONIST, MANAGER), async (req, res) => {
+billingRouter.get('/billing/pending', authorize('invoice.list'), async (req, res) => {
   const [records, installments] = await Promise.all([
     query(`
       SELECT r.id AS record_id, a.appt_date, a.slot_time, p.id AS patient_id, p.full_name AS patient_name,
@@ -47,7 +47,7 @@ billingRouter.get('/billing/pending', requireRole(RECEPTIONIST, MANAGER), async 
   res.json({ records, installments });
 });
 
-billingRouter.get('/billing/preview/:recordId', requireRole(RECEPTIONIST), async (req, res) => {
+billingRouter.get('/billing/preview/:recordId', authorize('invoice.create'), async (req, res) => {
   const head = await queryOne(PATIENT_OF_RECORD, [req.params.recordId]);
   if (!head) throw new HttpError(404, 'Không tìm thấy phiếu điều trị');
   const existing = await queryOne('SELECT id FROM invoice WHERE record_id = $1', [req.params.recordId]);
@@ -56,7 +56,7 @@ billingRouter.get('/billing/preview/:recordId', requireRole(RECEPTIONIST), async
 });
 
 // UC41 + UC43: giảm theo dòng và / hoặc ở tổng; giảm ở tổng phân bổ xuống dòng (mục 3.3)
-billingRouter.post('/invoices', requireRole(RECEPTIONIST), async (req, res) => {
+billingRouter.post('/invoices', authorize('invoice.create'), async (req, res) => {
   const b = req.body ?? {};
   const recordId = id(b.record_id, 'Phiếu điều trị');
   const totalDiscount = money(b.total_discount ?? 0, 'Giảm ở tổng');
@@ -99,7 +99,7 @@ billingRouter.post('/invoices', requireRole(RECEPTIONIST), async (req, res) => {
 });
 
 // UC42
-billingRouter.post('/invoices/installment', requireRole(RECEPTIONIST), async (req, res) => {
+billingRouter.post('/invoices/installment', authorize('invoice.create'), async (req, res) => {
   const installmentId = id(req.body?.installment_id, 'Đợt liệu trình');
   const row = await tx(req.user.id, async (client) => {
     const { rows: [inst] } = await client.query(`
@@ -121,7 +121,7 @@ billingRouter.post('/invoices/installment', requireRole(RECEPTIONIST), async (re
   res.status(201).json(row);
 });
 
-billingRouter.get('/invoices', requireRole(RECEPTIONIST, MANAGER), async (req, res) => {
+billingRouter.get('/invoices', authorize('invoice.list'), async (req, res) => {
   const status = oneOf(req.query.status ?? 'unpaid', ['unpaid', 'paid', 'all'], 'Trạng thái');
   const q = String(req.query.q ?? '').trim();
   res.json(await query(`
@@ -132,7 +132,7 @@ billingRouter.get('/invoices', requireRole(RECEPTIONIST, MANAGER), async (req, r
     ORDER BY b.created_at DESC LIMIT 200`, [status, q]));
 });
 
-billingRouter.get('/invoices/:id', requireRole(...ALL_ROLES), async (req, res) => {
+billingRouter.get('/invoices/:id', authorize('invoice.read'), async (req, res) => {
   const invoice = await queryOne(`
     SELECT b.*, i.record_id, i.installment_id, i.total_discount_amount, i.discount_reason,
            s.full_name AS created_by_name, p.full_name AS patient_name, p.contact_phone,
@@ -158,7 +158,7 @@ billingRouter.get('/invoices/:id', requireRole(...ALL_ROLES), async (req, res) =
 });
 
 // UC44: mỗi lần thu ghi số tiền + hình thức (LN-08); trigger chặn thu quá / ngày đã chốt két
-billingRouter.post('/invoices/:id/payments', requireRole(RECEPTIONIST), async (req, res) => {
+billingRouter.post('/invoices/:id/payments', authorize('payment.create'), async (req, res) => {
   const b = req.body ?? {};
   const row = await tx(req.user.id, async (client) => {
     const { rows } = await client.query(`
@@ -172,7 +172,7 @@ billingRouter.post('/invoices/:id/payments', requireRole(RECEPTIONIST), async (r
 });
 
 // UC45 / UC79
-billingRouter.get('/cash-closing', requireRole(RECEPTIONIST, MANAGER), async (req, res) => {
+billingRouter.get('/cash-closing', authorize('cash.read'), async (req, res) => {
   const day = date(req.query.date ?? todayLocal(), 'Ngày');
   const [payments, closing] = await Promise.all([
     query(`
@@ -192,7 +192,7 @@ billingRouter.get('/cash-closing', requireRole(RECEPTIONIST, MANAGER), async (re
   res.json({ date: day, cash: sum('cash'), transfer: sum('transfer'), payments, closing });
 });
 
-billingRouter.post('/cash-closing', requireRole(RECEPTIONIST), async (req, res) => {
+billingRouter.post('/cash-closing', authorize('cash.close'), async (req, res) => {
   const day = date(req.body?.closing_date ?? todayLocal(), 'Ngày');
   if (day > todayLocal()) throw new HttpError(400, 'Không chốt két cho ngày chưa tới');
   const row = await tx(req.user.id, async (client) => {

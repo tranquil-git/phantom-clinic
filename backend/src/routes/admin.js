@@ -1,6 +1,6 @@
 // UC40/UC60 bảng giá, UC61 ca trực, UC62 danh mục, UC63 tài khoản, UC50/UC51 kho
 import { Router } from 'express';
-import { ALL_ROLES, DENTIST, MANAGER, hashPassword, requireRole } from '../auth.js';
+import { authorize, checkPasswordPolicy, hashPassword, MANAGER } from '../auth.js';
 import { query, queryOne, tx } from '../db.js';
 import { HttpError } from '../errors.js';
 import { date, id, money, oneOf, optText, quantity, text, time, todayLocal } from '../validate.js';
@@ -8,7 +8,7 @@ import { date, id, money, oneOf, optText, quantity, text, time, todayLocal } fro
 export const adminRouter = Router();
 
 // Danh mục nhỏ dùng cho các ô chọn ở mọi màn hình
-adminRouter.get('/lookups', requireRole(...ALL_ROLES), async (req, res) => {
+adminRouter.get('/lookups', authorize('lookup.read'), async (req, res) => {
   const [chairs, doctors, services, cancelReasons, medicines] = await Promise.all([
     query('SELECT id, name FROM chair WHERE is_active ORDER BY id'),
     query("SELECT id, full_name FROM staff WHERE role = 'dentist' AND is_active ORDER BY full_name"),
@@ -24,7 +24,7 @@ adminRouter.get('/lookups', requireRole(...ALL_ROLES), async (req, res) => {
 // ---------------------------------------------------------------------
 // Bảng giá
 // ---------------------------------------------------------------------
-adminRouter.get('/prices', requireRole(...ALL_ROLES), async (req, res) => {
+adminRouter.get('/prices', authorize('price.read'), async (req, res) => {
   res.json(await query(`
     SELECT sv.id, sv.code, sv.name, sv.kind, sv.is_active,
            service_price_at(sv.id, local_date(now())) AS current_price,
@@ -34,7 +34,7 @@ adminRouter.get('/prices', requireRole(...ALL_ROLES), async (req, res) => {
     GROUP BY sv.id ORDER BY sv.kind, sv.name`));
 });
 
-adminRouter.post('/prices', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/prices', authorize('price.write'), async (req, res) => {
   const b = req.body ?? {};
   const row = await queryOne(`
     INSERT INTO service_price (service_id, effective_from, price, created_by)
@@ -46,7 +46,7 @@ adminRouter.post('/prices', requireRole(MANAGER), async (req, res) => {
 // ---------------------------------------------------------------------
 // Ca trực (LN-11)
 // ---------------------------------------------------------------------
-adminRouter.get('/shifts', requireRole(MANAGER, DENTIST), async (req, res) => {
+adminRouter.get('/shifts', authorize('shift.read'), async (req, res) => {
   const from = date(req.query.from ?? todayLocal(), 'Từ ngày');
   const to = date(req.query.to ?? from, 'Đến ngày');
   res.json(await query(`
@@ -59,7 +59,7 @@ adminRouter.get('/shifts', requireRole(MANAGER, DENTIST), async (req, res) => {
 });
 
 // Xếp ca cho một khoảng ngày theo các thứ trong tuần (1 = T2 … 7 = CN); có ca thì cập nhật giờ
-adminRouter.post('/shifts', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/shifts', authorize('shift.write'), async (req, res) => {
   const b = req.body ?? {};
   const doctorId = id(b.doctor_id, 'Bác sĩ');
   const from = date(b.from, 'Từ ngày');
@@ -93,7 +93,7 @@ adminRouter.post('/shifts', requireRole(MANAGER), async (req, res) => {
   res.status(201).json({ count: rows });
 });
 
-adminRouter.delete('/shifts/:id', requireRole(MANAGER), async (req, res) => {
+adminRouter.delete('/shifts/:id', authorize('shift.write'), async (req, res) => {
   await tx(req.user.id, async (client) => {
     const { rows: [sh] } = await client.query('SELECT * FROM doctor_shift WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (!sh) throw new HttpError(404, 'Không tìm thấy ca trực');
@@ -109,7 +109,7 @@ adminRouter.delete('/shifts/:id', requireRole(MANAGER), async (req, res) => {
 // ---------------------------------------------------------------------
 // Danh mục (UC62)
 // ---------------------------------------------------------------------
-adminRouter.get('/catalog', requireRole(MANAGER), async (req, res) => {
+adminRouter.get('/catalog', authorize('catalog.manage'), async (req, res) => {
   const [services, chairs, cancelReasons, items, supplies] = await Promise.all([
     query('SELECT * FROM service ORDER BY kind, name'),
     query('SELECT * FROM chair ORDER BY id'),
@@ -122,14 +122,14 @@ adminRouter.get('/catalog', requireRole(MANAGER), async (req, res) => {
   res.json({ services, chairs, cancelReasons, items, supplies });
 });
 
-adminRouter.post('/catalog/services', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/catalog/services', authorize('catalog.manage'), async (req, res) => {
   const b = req.body ?? {};
   res.status(201).json(await queryOne(
     'INSERT INTO service (code, name, kind) VALUES ($1, $2, $3) RETURNING *',
     [text(b.code, 'mã dịch vụ').toUpperCase(), text(b.name, 'tên dịch vụ'), oneOf(b.kind ?? 'single', ['single', 'plan'], 'Loại')]));
 });
 
-adminRouter.patch('/catalog/services/:id', requireRole(MANAGER), async (req, res) => {
+adminRouter.patch('/catalog/services/:id', authorize('catalog.manage'), async (req, res) => {
   const b = req.body ?? {};
   const row = await queryOne('UPDATE service SET name = $1, is_active = $2 WHERE id = $3 RETURNING *',
     [text(b.name, 'tên dịch vụ'), b.is_active !== false, req.params.id]);
@@ -137,22 +137,22 @@ adminRouter.patch('/catalog/services/:id', requireRole(MANAGER), async (req, res
   res.json(row);
 });
 
-adminRouter.post('/catalog/chairs', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/catalog/chairs', authorize('catalog.manage'), async (req, res) => {
   res.status(201).json(await queryOne('INSERT INTO chair (name) VALUES ($1) RETURNING *', [text(req.body?.name, 'tên ghế')]));
 });
 
-adminRouter.patch('/catalog/chairs/:id', requireRole(MANAGER), async (req, res) => {
+adminRouter.patch('/catalog/chairs/:id', authorize('catalog.manage'), async (req, res) => {
   const row = await queryOne('UPDATE chair SET name = $1, is_active = $2 WHERE id = $3 RETURNING *',
     [text(req.body?.name, 'tên ghế'), req.body?.is_active !== false, req.params.id]);
   if (!row) throw new HttpError(404, 'Không tìm thấy ghế');
   res.json(row);
 });
 
-adminRouter.post('/catalog/cancel-reasons', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/catalog/cancel-reasons', authorize('catalog.manage'), async (req, res) => {
   res.status(201).json(await queryOne('INSERT INTO cancel_reason (name) VALUES ($1) RETURNING *', [text(req.body?.name, 'lý do')]));
 });
 
-adminRouter.patch('/catalog/cancel-reasons/:id', requireRole(MANAGER), async (req, res) => {
+adminRouter.patch('/catalog/cancel-reasons/:id', authorize('catalog.manage'), async (req, res) => {
   const row = await queryOne('UPDATE cancel_reason SET name = $1, is_active = $2 WHERE id = $3 RETURNING *',
     [text(req.body?.name, 'lý do'), req.body?.is_active !== false, req.params.id]);
   if (!row) throw new HttpError(404, 'Không tìm thấy lý do hủy');
@@ -167,13 +167,13 @@ function itemInput(b) {
   return [kind, text(b.name, 'tên'), text(b.unit, 'đơn vị'), threshold, salePrice];
 }
 
-adminRouter.post('/catalog/items', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/catalog/items', authorize('catalog.manage'), async (req, res) => {
   res.status(201).json(await queryOne(`
     INSERT INTO inventory_item (kind, name, unit, reorder_threshold, sale_price) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
   itemInput(req.body ?? {})));
 });
 
-adminRouter.patch('/catalog/items/:id', requireRole(MANAGER), async (req, res) => {
+adminRouter.patch('/catalog/items/:id', authorize('catalog.manage'), async (req, res) => {
   const row = await queryOne(`
     UPDATE inventory_item SET kind = $1, name = $2, unit = $3, reorder_threshold = $4, sale_price = $5, is_active = $6
     WHERE id = $7 RETURNING *`, [...itemInput(req.body ?? {}), req.body?.is_active !== false, req.params.id]);
@@ -181,7 +181,7 @@ adminRouter.patch('/catalog/items/:id', requireRole(MANAGER), async (req, res) =
   res.json(row);
 });
 
-adminRouter.put('/catalog/supplies', requireRole(MANAGER), async (req, res) => {
+adminRouter.put('/catalog/supplies', authorize('catalog.manage'), async (req, res) => {
   const b = req.body ?? {};
   res.json(await queryOne(`
     INSERT INTO service_supply (service_id, item_id, quantity) VALUES ($1, $2, $3)
@@ -189,7 +189,7 @@ adminRouter.put('/catalog/supplies', requireRole(MANAGER), async (req, res) => {
   [id(b.service_id, 'Dịch vụ'), id(b.item_id, 'Vật tư'), quantity(b.quantity, 'Định mức')]));
 });
 
-adminRouter.delete('/catalog/supplies', requireRole(MANAGER), async (req, res) => {
+adminRouter.delete('/catalog/supplies', authorize('catalog.manage'), async (req, res) => {
   await query('DELETE FROM service_supply WHERE service_id = $1 AND item_id = $2',
     [id(req.query.service_id, 'Dịch vụ'), id(req.query.item_id, 'Vật tư')]);
   res.status(204).end();
@@ -200,29 +200,30 @@ adminRouter.delete('/catalog/supplies', requireRole(MANAGER), async (req, res) =
 // ---------------------------------------------------------------------
 const ROLES = ['receptionist', 'dentist', 'manager'];
 
-adminRouter.get('/staff', requireRole(MANAGER), async (req, res) => {
+adminRouter.get('/staff', authorize('staff.manage'), async (req, res) => {
   res.json(await query('SELECT id, full_name, phone, role, username, is_active, created_at FROM staff ORDER BY role, full_name'));
 });
 
-adminRouter.post('/staff', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/staff', authorize('staff.manage'), async (req, res) => {
   const b = req.body ?? {};
   const password = text(b.password, 'mật khẩu');
-  if (password.length < 6) throw new HttpError(400, 'Mật khẩu tối thiểu 6 ký tự');
+  const username = text(b.username, 'tên đăng nhập').toLowerCase();
+  checkPasswordPolicy(password, username);
   res.status(201).json(await queryOne(`
     INSERT INTO staff (full_name, phone, role, username, password_hash) VALUES ($1, $2, $3, $4, $5)
     RETURNING id, full_name, role, username`,
   [text(b.full_name, 'họ tên'), optText(b.phone), oneOf(b.role, ROLES, 'Vai trò'),
-    text(b.username, 'tên đăng nhập').toLowerCase(), hashPassword(password)]));
+    username, hashPassword(password)]));
 });
 
-adminRouter.patch('/staff/:id', requireRole(MANAGER), async (req, res) => {
+adminRouter.patch('/staff/:id', authorize('staff.manage'), async (req, res) => {
   const b = req.body ?? {};
   const isActive = b.is_active !== false;
   if (Number(req.params.id) === req.user.id && (!isActive || b.role !== MANAGER)) {
     throw new HttpError(409, 'Không tự khóa hoặc tự đổi vai trò của chính mình');
   }
   const password = optText(b.password);
-  if (password && password.length < 6) throw new HttpError(400, 'Mật khẩu tối thiểu 6 ký tự');
+  if (password) checkPasswordPolicy(password);
   const row = await queryOne(`
     UPDATE staff SET full_name = $1, phone = $2, role = $3, is_active = $4,
            password_hash = COALESCE($5, password_hash)
@@ -236,7 +237,7 @@ adminRouter.patch('/staff/:id', requireRole(MANAGER), async (req, res) => {
 // ---------------------------------------------------------------------
 // Kho (UC50, UC51)
 // ---------------------------------------------------------------------
-adminRouter.get('/inventory', requireRole(MANAGER), async (req, res) => {
+adminRouter.get('/inventory', authorize('inventory.manage'), async (req, res) => {
   const [stock, movements] = await Promise.all([
     query('SELECT * FROM inventory_stock ORDER BY below_threshold DESC, kind, name'),
     query(`
@@ -248,7 +249,7 @@ adminRouter.get('/inventory', requireRole(MANAGER), async (req, res) => {
   res.json({ stock, movements });
 });
 
-adminRouter.post('/inventory/movements', requireRole(MANAGER), async (req, res) => {
+adminRouter.post('/inventory/movements', authorize('inventory.manage'), async (req, res) => {
   const b = req.body ?? {};
   const type = oneOf(b.movement_type, ['receipt', 'manual_out', 'adjustment'], 'Loại phiếu');
   const qty = Number(b.quantity);

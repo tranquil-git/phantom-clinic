@@ -3,3 +3,4 @@
 !.env.production.example
 node_modules
 scripts
+test
